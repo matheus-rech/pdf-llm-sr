@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Q&A with Highlighting</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <script>
+        // Set the worker source for pdf.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js`;
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #pdf-canvas-container {
+            position: relative;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            overflow: auto; /* Allow scrolling for oversized PDFs */
+            height: 600px; /* Give a fixed height for better layout */
+        }
+        #pdf-canvas {
+            display: block;
+        }
+        .bounding-box {
+            position: absolute;
+            background-color: rgba(253, 224, 71, 0.6); /* Highlighter yellow */
+            border-radius: 2px;
+            box-sizing: border-box;
+            z-index: 10;
+            transition: background-color 0.3s ease-in-out;
+            pointer-events: none;
+        }
+        #source-quote-container.clickable {
+            cursor: pointer;
+        }
+        #source-quote-container.clickable > div {
+            transition: background-color 0.2s;
+        }
+        #source-quote-container.clickable:hover > div {
+             background-color: #eef2ff; /* Light indigo hover */
+        }
+        .history-item {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .history-item:hover {
+            background-color: #f9fafb;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Advanced Document Q&A</h1>
+            <p class="text-md text-gray-600 mt-2">Using a three-step "Find Page -> Answer -> Highlight" approach for high accuracy.</p>
+        </header>
+
+        <main class="bg-white p-6 rounded-lg shadow-lg">
+            <!-- Upload Section -->
+            <div id="upload-section" class="mb-6 text-center">
+                <label for="pdf-upload" class="cursor-pointer inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                    Upload PDF
+                </label>
+                <input type="file" id="pdf-upload" class="hidden" accept="application/pdf">
+                <p id="file-name" class="mt-3 text-gray-500"></p>
+            </div>
+
+            <!-- Main Content Area (hidden initially) -->
+            <div id="content-area" class="hidden">
+                <div class="flex flex-col md:flex-row gap-8">
+                    <!-- Left Column: PDF Viewer and History -->
+                    <div class="flex-grow md:w-2/3">
+                        <h2 class="text-xl font-semibold mb-2">Document Viewer</h2>
+
+                        <!-- ✨ New Tab Interface -->
+                        <div>
+                            <div class="border-b border-gray-200">
+                                <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                                    <button id="viewer-tab" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-indigo-600 border-indigo-500" aria-current="page">
+                                        Viewer
+                                    </button>
+                                    <button id="text-tab" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300 border-transparent">
+                                        Plain Text
+                                    </button>
+                                </nav>
+                            </div>
+                        </div>
+
+                        <!-- Tab Panels -->
+                        <div class="mt-4">
+                            <!-- Viewer Panel -->
+                            <div id="viewer-panel">
+                                <div id="pdf-controls" class="flex items-center justify-between bg-gray-100 p-2 rounded-md mb-2">
+                                    <button id="prev-page" class="px-3 py-1 bg-gray-300 rounded hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed">&lt; Prev</button>
+                                    <span id="page-num" class="text-sm">Page 1 of 1</span>
+                                    <button id="next-page" class="px-3 py-1 bg-gray-300 rounded hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed">Next &gt;</button>
+                                </div>
+                                <div id="pdf-canvas-container" class="rounded-lg border bg-gray-50 mb-6">
+                                   <!-- Canvas and Highlights will be added here -->
+                                </div>
+                            </div>
+                            
+                            <!-- Plain Text Panel -->
+                            <div id="text-panel" class="hidden">
+                                <div id="plain-text-container" class="p-4 bg-gray-50 rounded-lg border max-h-[600px] overflow-y-auto whitespace-pre-wrap text-sm" style="height: 642px;">
+                                    <!-- Full text will be injected here -->
+                                </div>
+                            </div>
+                        </div>
+
+
+                        <!-- History Section -->
+                        <div id="history-section" class="mt-6">
+                            <h2 class="text-xl font-semibold mb-2">History</h2>
+                            <div id="history-container" class="space-y-4 max-h-96 overflow-y-auto p-3 bg-gray-50 rounded-lg border">
+                                <!-- History items will be injected here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: AI Tools -->
+                    <div class="md:w-1/3">
+                        <h2 class="text-xl font-semibold mb-2">✨ AI Tools</h2>
+                        <div class="space-y-4">
+                             <button id="summarize-button" class="w-full flex justify-center items-center px-4 py-2 bg-teal-600 text-white font-semibold rounded-md hover:bg-teal-700 disabled:bg-teal-300">
+                                <span id="summarize-button-text">Summarize Document</span>
+                                <span id="summarize-spinner" class="hidden"><svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></span>
+                            </button>
+                             <div id="summary-area" class="hidden mt-4">
+                                 <h3 class="text-lg font-semibold mb-2">PICOTT Summary</h3>
+                                 <div id="summary-text" class="p-4 bg-gray-50 rounded-md border border-gray-200 text-gray-700 whitespace-pre-wrap max-h-96 overflow-y-auto"></div>
+                            </div>
+                            
+                            <hr/>
+
+                            <h3 class="text-lg font-semibold">Ask about the document</h3>
+                            <textarea id="question-input" rows="3" class="w-full p-2 border rounded-md focus:ring-2 focus:ring-indigo-500" placeholder="e.g., What was the main conclusion?"></textarea>
+                            
+                            <div class="flex gap-2">
+                                <button id="ask-button" class="w-full px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 disabled:bg-indigo-300">
+                                    <span id="ask-button-text">Ask</span>
+                                    <span id="ask-spinner" class="hidden"><svg class="animate-spin h-5 w-5 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></span>
+                                </button>
+                            </div>
+
+                            <div id="answer-area" class="mt-4 hidden">
+                                <h3 class="text-lg font-semibold mb-2">Answer</h3>
+                                <div id="answer-text" class="p-4 bg-gray-50 rounded-md border border-gray-200 text-gray-700 whitespace-pre-wrap"></div>
+                                <div id="source-quote-container" class="mt-4 hidden">
+                                    <h4 class="text-md font-semibold text-gray-600 mb-1">Source from document:</h4>
+                                    <div id="source-quote-text" class="p-3 bg-gray-100 border-l-4 border-gray-300 text-sm text-gray-600 italic whitespace-pre-wrap"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+             <div id="status-message" class="mt-4 text-center text-gray-600"></div>
+        </main>
+    </div>
+
+    <script>
+        // --- DOM Element References ---
+        const uploadSection = document.getElementById('upload-section');
+        const contentArea = document.getElementById('content-area');
+        const pdfUpload = document.getElementById('pdf-upload');
+        let currentPdfName = '';
+        const fileNameDisplay = document.getElementById('file-name');
+        const pdfCanvasContainer = document.getElementById('pdf-canvas-container');
+        const prevPageBtn = document.getElementById('prev-page');
+        const nextPageBtn = document.getElementById('next-page');
+        const pageNumDisplay = document.getElementById('page-num');
+        const questionInput = document.getElementById('question-input');
+        const askButton = document.getElementById('ask-button');
+        const summarizeButton = document.getElementById('summarize-button');
+        let answerArea = document.getElementById('answer-area');
+        let answerText = document.getElementById('answer-text');
+        let sourceQuoteContainer = document.getElementById('source-quote-container');
+        let sourceQuoteText = document.getElementById('source-quote-text');
+        const summaryArea = document.getElementById('summary-area');
+        const summaryText = document.getElementById('summary-text');
+        const statusMessage = document.getElementById('status-message');
+        const historyContainer = document.getElementById('history-container');
+        // ✨ New Tab Elements
+        const viewerTab = document.getElementById('viewer-tab');
+        const textTab = document.getElementById('text-tab');
+        const viewerPanel = document.getElementById('viewer-panel');
+        const textPanel = document.getElementById('text-panel');
+        const plainTextContainer = document.getElementById('plain-text-container');
+
+        // --- State Variables ---
+        let pdfDoc = null;
+        let currentPageNum = 1;
+        let pageRendering = false;
+        let pageTextContents = []; // Stores text items per page
+
+        // --- PDF Handling and Rendering ---
+        pdfUpload.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                currentPdfName = file.name;
+                fileNameDisplay.textContent = `File: ${file.name}`;
+                statusMessage.textContent = 'Loading and parsing PDF...';
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    try {
+                        await loadAndParsePdf(new Uint8Array(e.target.result));
+                        contentArea.classList.remove('hidden');
+                        uploadSection.classList.add('hidden');
+                        statusMessage.textContent = 'PDF processed. Ready for questions.';
+                        renderHistory();
+                        setupTabs(); // ✨ Initialize tab functionality
+                    } catch(err) {
+                        console.error("Error processing PDF:", err);
+                        statusMessage.textContent = `Error: ${err.message}`;
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        async function loadAndParsePdf(pdfData) {
+            pdfDoc = await pdfjsLib.getDocument({ data: pdfData }).promise;
+            await parseAllPages();
+            await renderPage(1);
+            populatePlainText(); // ✨ Populate the text view after parsing
+        }
+
+        async function renderPage(num) {
+            if (pageRendering) return;
+            pageRendering = true;
+            currentPageNum = num;
+            pdfCanvasContainer.innerHTML = '';
+            const page = await pdfDoc.getPage(num);
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement('canvas');
+            canvas.id = 'pdf-canvas';
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            pdfCanvasContainer.appendChild(canvas);
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+            pageNumDisplay.textContent = `Page ${num} of ${pdfDoc.numPages}`;
+            updatePageControls();
+            pageRendering = false;
+        }
+        
+        async function parseAllPages() {
+            pageTextContents = [];
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                const page = await pdfDoc.getPage(i);
+                const textContent = await page.getTextContent();
+                pageTextContents[i] = textContent.items;
+            }
+        }
+        
+        // ✨ New function to populate the plain text view
+        function populatePlainText() {
+            let fullTextHtml = '';
+            pageTextContents.forEach((pageItems, pageNum) => {
+                if(pageItems) {
+                    fullTextHtml += `<strong class="block mt-4 mb-2 p-2 bg-gray-200 rounded">Page ${pageNum}</strong>`;
+                    const pageText = pageItems.map(item => item.str).join(' ');
+                    fullTextHtml += `<p>${pageText.replace(/\n/g, '<br>')}</p>`;
+                }
+            });
+            plainTextContainer.innerHTML = fullTextHtml;
+        }
+
+        // ✨ New function to handle tab switching
+        function setupTabs() {
+            viewerTab.addEventListener('click', () => switchTab('viewer'));
+            textTab.addEventListener('click', () => switchTab('text'));
+        }
+
+        function switchTab(tabName) {
+            if (tabName === 'viewer') {
+                viewerPanel.classList.remove('hidden');
+                textPanel.classList.add('hidden');
+
+                viewerTab.classList.add('text-indigo-600', 'border-indigo-500');
+                viewerTab.classList.remove('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'border-transparent');
+                
+                textTab.classList.add('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'border-transparent');
+                textTab.classList.remove('text-indigo-600', 'border-indigo-500');
+            } else {
+                textPanel.classList.remove('hidden');
+                viewerPanel.classList.add('hidden');
+
+                textTab.classList.add('text-indigo-600', 'border-indigo-500');
+                textTab.classList.remove('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'border-transparent');
+                
+                viewerTab.classList.add('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'border-transparent');
+                viewerTab.classList.remove('text-indigo-600', 'border-indigo-500');
+            }
+        }
+
+        function updatePageControls() {
+            prevPageBtn.disabled = currentPageNum <= 1;
+            nextPageBtn.disabled = currentPageNum >= pdfDoc.numPages;
+        }
+
+        prevPageBtn.addEventListener('click', () => {
+            if (currentPageNum <= 1 || pageRendering) return;
+            renderPage(currentPageNum - 1).then(clearAllOutputs);
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            if (currentPageNum >= pdfDoc.numPages || pageRendering) return;
+            renderPage(currentPageNum + 1).then(clearAllOutputs);
+        });
+
+        // --- AI Features & Gemini API ---
+
+        async function callGemini(prompt, isJson = false) {
+            const payload = { contents: [{ parts: [{ text: prompt }] }] };
+            if (isJson) {
+                payload.generationConfig = { responseMimeType: "application/json" };
+            }
+            const apiKey = "GEMINI_API_KEY";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) throw new Error(`API call failed: ${response.status}`);
+            const result = await response.json();
+            if (!result.candidates?.length) throw new Error("No response from AI model.");
+            const textResponse = result.candidates[0].content.parts[0].text;
+            return isJson ? JSON.parse(textResponse.replace(/```json\n|```/g, '').trim()) : textResponse;
+        }
+
+        askButton.addEventListener('click', async () => {
+            const question = questionInput.value.trim();
+            if (!question) { alert("Please enter a question."); return; }
+            if (pageTextContents.length === 0) { alert("Document not parsed yet."); return; }
+
+            toggleLoading('ask', true);
+            clearAllOutputs();
+
+            try {
+                // Step 1: Find the most relevant page number
+                const fullDocumentText = pageTextContents.map((p, i) => p ? `\n\n[Page ${i}]\n${p.map(item => item.str).join(' ')}` : '').join('');
+                const pageFinderPrompt = `You are a search index. Analyze the document text and identify the single most relevant page number to answer the user's question.\n\n**Full Document Text**:\n---\n${fullDocumentText}\n---\n\n**User Question**: "${question}"\n\n**Instructions**: Respond with only a JSON object containing a single key "page_number". Example: \`{"page_number": 12}\`. If no page is relevant, return page_number 0.`;
+
+                const pageResult = await callGemini(pageFinderPrompt, true);
+                const sourcePage = pageResult.page_number;
+
+                if (!sourcePage || sourcePage === 0) {
+                    displayAnswerAndQuote("I could not find a relevant page in this document to answer the question.");
+                    return;
+                }
+
+                // Step 2: Generate an answer using the full text of the identified page
+                const pageText = pageTextContents[sourcePage].map(item => item.str).join(' ');
+                const generationPrompt = `Based *only* on the following Page Text, provide a concise and direct answer to the User Question.\n\n**Page Text**: "${pageText}"\n\n**User Question**: "${question}"`;
+                const finalAnswer = await callGemini(generationPrompt);
+
+                // Step 3: Find the specific quote on that page to highlight
+                const quoteFinderPrompt = `You are a text analysis tool. Find the best, continuous, verbatim quote from the provided Page Text that directly supports the Answer.\n\n**Answer**: "${finalAnswer}"\n\n**Page Text**: "${pageText}"\n\n**Instructions**: Respond with a JSON object containing a single key "source_quote". Example: \`{"source_quote": "The results show a significant increase."}\``;
+
+                const quoteResult = await callGemini(quoteFinderPrompt, true);
+                const sourceQuote = quoteResult.source_quote;
+                
+                displayAnswerAndQuote(finalAnswer, sourceQuote);
+
+                // Step 4: Save to history, navigate, and highlight
+                if (sourcePage > 0) {
+                    if (currentPageNum !== sourcePage) {
+                        await renderPage(sourcePage);
+                    }
+                    
+                    const pageImage = document.getElementById('pdf-canvas').toDataURL('image/jpeg', 0.4);
+                    saveHistoryEntry({
+                        id: Date.now(),
+                        pdfName: currentPdfName,
+                        question,
+                        answer: finalAnswer,
+                        sourceQuote: sourceQuote,
+                        pageNumber: sourcePage,
+                        pageImage,
+                    });
+
+                    setTimeout(async () => {
+                        const itemsToHighlight = await findQuoteItemsOnPage(sourceQuote);
+                        if (itemsToHighlight.length > 0) {
+                            const firstHighlight = await drawHighlights(itemsToHighlight);
+                            if (firstHighlight) {
+                                makeAnswerClickable(firstHighlight, sourceQuote);
+                            }
+                        }
+                    }, 100);
+                }
+
+            } catch(error) {
+                console.error("Error with 3-step Q&A:", error);
+                displayAnswerAndQuote(`An error occurred: ${error.message}.`);
+            } finally {
+                toggleLoading('ask', false);
+            }
+        });
+
+        summarizeButton.addEventListener('click', async () => { 
+            toggleLoading('summarize', true);
+            clearAllOutputs();
+            try {
+                const fullDocumentText = pageTextContents.map((p, i) => p ? `\n\n[Page ${i}]\n${p.map(item => item.str).join(' ')}` : '').join('');
+
+                const picottPrompt = `You are a highly specialized assistant for clinical and scientific research analysis. Your task is to extract specific information from the provided document text according to the PICOTT framework and other study criteria.
+
+                **Framework Definitions:**
+                - **P (Population/Problem):** Who are the patients or what is the problem?
+                - **I (Intervention):** What is the new treatment, test, or factor being considered?
+                - **C (Comparison):** What is the main alternative to the intervention (e.g., standard therapy, placebo)?
+                - **O (Outcome):** What is the result or effect being measured?
+                - **T (Time):** Over what period of time is the outcome being assessed?
+                - **T (Type of Study):** What is the study design (e.g., Randomized Controlled Trial, Cohort Study)?
+                - **Inclusion Criteria:** What criteria must subjects meet to be included?
+                - **Exclusion Criteria:** What criteria would disqualify subjects from the study?
+
+                **Full Document Text**:
+                ---
+                ${fullDocumentText}
+                ---
+
+                **Instructions**:
+                1. Analyze the full document text.
+                2. For each element in the framework above, find the single best continuous quote that defines it.
+                3. Identify the page number for each quote based on the [Page X] markers.
+                4. Your response MUST be a single valid JSON object.
+                5. The JSON object must have keys: "population", "intervention", "comparison", "outcome", "time", "type_of_study", "inclusion_criteria", "exclusion_criteria".
+                6. The value for each key must be an object with three string keys: "text" (a concise summary of the finding), "quote" (the verbatim source quote), and "page_number" (the page number as an integer).
+                7. If you cannot find information for a specific element, the value for "text" and "quote" should be "Not found" and "page_number" should be 0.`;
+
+                const summaryData = await callGemini(picottPrompt, true);
+                const formattedSummary = formatPicottSummary(summaryData);
+                summaryText.innerHTML = formattedSummary;
+                summaryArea.classList.remove('hidden');
+
+            } catch(e){
+                summaryText.textContent = "Error creating structured summary. The document may not be a clinical study or the format could not be identified.";
+                summaryArea.classList.remove('hidden');
+                console.error("PICOTT Summary Error:", e);
+            } finally {
+                toggleLoading('summarize', false);
+            }
+        });
+
+        function formatPicottSummary(data) {
+            let html = '';
+            const fields = {
+                population: "Population/Problem",
+                intervention: "Intervention",
+                comparison: "Comparison",
+                outcome: "Outcome",
+                time: "Time",
+                type_of_study: "Type of Study",
+                inclusion_criteria: "Inclusion Criteria",
+                exclusion_criteria: "Exclusion Criteria"
+            };
+
+            for (const key in fields) {
+                if (data[key] && data[key].text && data[key].text !== 'Not found') {
+                    html += `<div class="mb-4">`;
+                    html += `<strong class="font-semibold text-gray-800">${fields[key]}:</strong>`;
+                    html += `<p class="text-gray-700">${data[key].text}</p>`;
+                    if (data[key].quote && data[key].quote !== 'Not found') {
+                        html += `<p class="mt-1 text-xs text-gray-500 italic border-l-2 border-gray-200 pl-2"><strong>Source (Page ${data[key].page_number}):</strong> "${data[key].quote}"</p>`;
+                    }
+                    html += `</div>`;
+                }
+            }
+            return html || `<p>Could not extract PICOTT information from this document.</p>`;
+        }
+
+
+        // --- UI Display and Highlighting ---
+        
+        function displayAnswerAndQuote(answer, quote = "") {
+            answerText.textContent = answer;
+            answerArea.classList.remove('hidden');
+            if (quote) {
+                sourceQuoteText.textContent = `“${quote}”`;
+                sourceQuoteContainer.classList.remove('hidden');
+            }
+        }
+
+        async function findQuoteItemsOnPage(quote) {
+            const pageItems = pageTextContents[currentPageNum] || [];
+            if (!quote || pageItems.length === 0) return [];
+            const normalizedQuote = quote.replace(/\s+/g, '').toLowerCase();
+            for (let i = 0; i < pageItems.length; i++) {
+                let textWindow = '';
+                let foundItems = [];
+                for (let j = i; j < pageItems.length; j++) {
+                    textWindow += pageItems[j].str;
+                    foundItems.push(pageItems[j]);
+                    if (textWindow.replace(/\s+/g, '').toLowerCase().includes(normalizedQuote)) return foundItems;
+                }
+            }
+            return [];
+        }
+        
+        async function drawHighlights(itemsToHighlight) {
+            const page = await pdfDoc.getPage(currentPageNum);
+            const viewport = page.getViewport({ scale: 1.5 });
+            let firstHighlight = null;
+            itemsToHighlight.forEach((item, index) => {
+                const [,, , , x, y] = item.transform;
+                const highlight = document.createElement('div');
+                highlight.className = 'bounding-box';
+                highlight.style.left = `${x}px`;
+                highlight.style.top = `${viewport.height - y}px`;
+                highlight.style.width = `${item.width}px`;
+                highlight.style.height = `${item.height}px`;
+                highlight.style.transform = `translateY(-100%)`;
+                pdfCanvasContainer.appendChild(highlight);
+                if (index === 0) firstHighlight = highlight;
+            });
+            return firstHighlight;
+        }
+        function makeAnswerClickable(targetElement, quote) {
+            const oldContainer = document.getElementById('source-quote-container');
+            const newContainer = oldContainer.cloneNode(true);
+            oldContainer.parentNode.replaceChild(newContainer, oldContainer);
+            sourceQuoteContainer = newContainer;
+            sourceQuoteText = newContainer.querySelector('#source-quote-text');
+            sourceQuoteContainer.classList.add('clickable');
+            sourceQuoteContainer.onclick = () => {
+                pdfCanvasContainer.scrollTo({ top: targetElement.offsetTop - (pdfCanvasContainer.clientHeight / 4), behavior: 'smooth' });
+                document.querySelectorAll('.bounding-box').forEach(box => {
+                    box.style.backgroundColor = 'rgba(251, 146, 60, 0.7)';
+                    setTimeout(() => { box.style.backgroundColor = ''; }, 1200);
+                });
+            };
+        }
+        
+        // --- History Functions ---
+        function getHistory() { return JSON.parse(localStorage.getItem('pdf_qa_history') || '[]'); }
+        function saveHistoryEntry(entry) {
+            const history = getHistory();
+            history.unshift(entry);
+            localStorage.setItem('pdf_qa_history', JSON.stringify(history));
+            renderHistory();
+        }
+        function renderHistory() {
+            const history = getHistory();
+            historyContainer.innerHTML = '';
+            if (history.length === 0) {
+                historyContainer.innerHTML = `<p class="text-gray-500 text-center">No history yet.</p>`;
+                return;
+            }
+            history.forEach(entry => {
+                const item = document.createElement('div');
+                item.className = 'history-item p-4 border rounded-lg hover:shadow-md';
+                item.innerHTML = `<div class="flex gap-4"><img src="${entry.pageImage}" alt="Page snapshot" class="w-24 h-32 object-cover border rounded-md"><div class="flex-grow"><p class="font-semibold text-gray-800 break-words">Q: ${entry.question}</p><p class="text-sm text-gray-600 mt-1 break-words">A: ${entry.answer}</p><p class="text-xs text-gray-400 mt-2">Source from: ${entry.pdfName} (Page ${entry.pageNumber})</p></div></div>`;
+                item.addEventListener('click', async () => {
+                    if (currentPdfName !== entry.pdfName) {
+                        alert(`Please upload the correct PDF to view this history item: ${entry.pdfName}`);
+                        return;
+                    }
+                    clearAllOutputs();
+                    displayAnswerAndQuote(entry.answer, entry.sourceQuote);
+                    await renderPage(entry.pageNumber);
+                    setTimeout(async () => {
+                        const items = await findQuoteItemsOnPage(entry.sourceQuote);
+                        if (items.length > 0) {
+                            const firstBox = await drawHighlights(items);
+                            if (firstBox) makeAnswerClickable(firstBox, entry.sourceQuote);
+                        }
+                    }, 100);
+                });
+                historyContainer.appendChild(item);
+            });
+        }
+        
+        // --- Utility & Helper Functions ---
+        function clearAllOutputs() {
+            document.querySelectorAll('.bounding-box').forEach(box => box.remove());
+            answerArea.classList.add('hidden');
+            sourceQuoteContainer.classList.add('hidden');
+            sourceQuoteContainer.classList.remove('clickable');
+            sourceQuoteContainer.onclick = null;
+            sourceQuoteText.textContent = '';
+            summaryArea.classList.add('hidden');
+        }
+        function toggleLoading(buttonType, isLoading) {
+            const map = {
+                ask: { btn: askButton, text: 'ask-button-text', spin: 'ask-spinner' },
+                summarize: { btn: summarizeButton, text: 'summarize-button-text', spin: 'summarize-spinner' },
+            };
+            const { btn, text, spin } = map[buttonType];
+            btn.disabled = isLoading;
+            document.getElementById(text).classList.toggle('hidden', isLoading);
+            document.getElementById(spin).classList.toggle('hidden', !isLoading);
+        }
+    </script>
+</body>
+</html>
