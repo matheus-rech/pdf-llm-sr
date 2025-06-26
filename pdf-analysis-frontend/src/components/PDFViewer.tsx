@@ -16,6 +16,7 @@ interface PDFViewerProps {
     text: string;
   }>;
   pdfFile?: File | null;
+  onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
 }
 
 export const PDFViewer: React.FC<PDFViewerProps> = ({
@@ -23,7 +24,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   currentPage,
   onPageChange,
   highlights,
-  pdfFile
+  pdfFile,
+  onCanvasReady
 }) => {
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const [pdfDoc, setPdfDoc] = useState<any>(null);
@@ -50,7 +52,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     try {
       const pdfjsLib = await import('pdfjs-dist');
       
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
       
       const arrayBuffer = await pdfFile.arrayBuffer();
       const pdfDocument = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
@@ -98,6 +100,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       
       canvasContainerRef.current.appendChild(canvas);
       
+      if (onCanvasReady) {
+        onCanvasReady(canvas);
+      }
+      
       const context = canvas.getContext('2d');
       if (context) {
         await page.render({ canvasContext: context, viewport: viewport }).promise;
@@ -114,7 +120,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   const drawHighlights = async (pageNum: number) => {
     const pageHighlights = highlights.filter(h => h.page === pageNum);
-    if (pageHighlights.length === 0 || !pdfDoc || !canvasContainerRef.current) return;
+    if (!pdfDoc || !canvasContainerRef.current) return;
+
+    const existingHighlights = canvasContainerRef.current.querySelectorAll('.highlight-element');
+    existingHighlights.forEach(highlight => highlight.remove());
+
+    if (pageHighlights.length === 0) return;
 
     try {
       const page = await pdfDoc.getPage(pageNum);
@@ -125,7 +136,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       itemsToHighlight.forEach((item: any) => {
         const [,, , , x, y] = item.transform;
         const highlight = document.createElement('div');
-        highlight.className = 'absolute bg-yellow-300 bg-opacity-50 border-l-4 border-orange-500 pointer-events-none';
+        highlight.className = 'highlight-element absolute bg-yellow-300 bg-opacity-50 border-l-4 border-orange-500 pointer-events-none';
         highlight.style.left = `${x}px`;
         highlight.style.top = `${viewport.height - y}px`;
         highlight.style.width = `${item.width}px`;

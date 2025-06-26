@@ -7,6 +7,7 @@ import { QuestionForm } from './components/QuestionForm';
 import { AnswerDisplay } from './components/AnswerDisplay';
 import { History } from './components/History';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { toast } from './hooks/use-toast';
 
 interface PDFData {
   filename: string;
@@ -40,6 +41,7 @@ interface Summary {
 }
 
 function App() {
+  const [currentCanvas, setCurrentCanvas] = useState<HTMLCanvasElement | null>(null);
   const [pdfData, setPdfData] = useState<PDFData | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -70,15 +72,14 @@ function App() {
 
   const capturePageSnapshot = useCallback(async (): Promise<string> => {
     try {
-      const canvas = document.getElementById('pdf-canvas') as HTMLCanvasElement;
-      if (canvas) {
-        return canvas.toDataURL('image/jpeg', 0.8);
+      if (currentCanvas) {
+        return currentCanvas.toDataURL('image/jpeg', 0.8);
       }
     } catch (error) {
       console.error('Error capturing page snapshot:', error);
     }
     return '';
-  }, []);
+  }, [currentCanvas]);
 
   const handleFileUpload = useCallback(async (file: File) => {
     setIsUploading(true);
@@ -111,7 +112,11 @@ function App() {
       }
     } catch (error) {
       console.error('Error uploading PDF:', error);
-      alert(`Error uploading PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: `Error uploading PDF: ${error instanceof Error ? error.message : 'Unknown error'}`
+      });
     } finally {
       setIsUploading(false);
     }
@@ -168,7 +173,11 @@ function App() {
       }
     } catch (error) {
       console.error('Error processing question:', error);
-      alert(`Error processing question: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast({
+        variant: "destructive",
+        title: "Question Processing Failed",
+        description: `Error processing question: ${error instanceof Error ? error.message : 'Unknown error'}`
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -201,7 +210,11 @@ function App() {
       }
     } catch (error) {
       console.error('Error generating summary:', error);
-      alert(`Error generating summary: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast({
+        variant: "destructive",
+        title: "Summary Generation Failed",
+        description: `Error generating summary: ${error instanceof Error ? error.message : 'Unknown error'}`
+      });
     } finally {
       setIsSummarizing(false);
     }
@@ -209,7 +222,11 @@ function App() {
 
   const handleSelectHistoryItem = useCallback((item: HistoryItem) => {
     if (item.pdfName && pdfData && item.pdfName !== pdfData.filename) {
-      alert(`Please upload the correct PDF to view this history item: ${item.pdfName}`);
+      toast({
+        variant: "destructive",
+        title: "Wrong PDF",
+        description: `Please upload the correct PDF to view this history item: ${item.pdfName}`
+      });
       return;
     }
     
@@ -256,6 +273,7 @@ function App() {
                   currentPage={currentPage}
                   onPageChange={handleGoToPage}
                   highlights={highlights}
+                  onCanvasReady={setCurrentCanvas}
                 />
 
                 <div className="mb-8">

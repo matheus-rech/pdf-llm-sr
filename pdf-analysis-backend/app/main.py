@@ -3,12 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import PyPDF2
 import google.generativeai as genai
+import google.api_core.exceptions
 from dotenv import load_dotenv
 import os
 import json
 import logging
 from typing import Dict, Any, List
 import io
+import requests
 
 load_dotenv()
 
@@ -83,7 +85,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         
     except Exception as e:
         logger.error(f"Error processing PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}") from e
 
 async def call_gemini(prompt: str, is_json: bool = False) -> Any:
     """Call Gemini API with proper error handling"""
@@ -100,7 +102,7 @@ async def call_gemini(prompt: str, is_json: bool = False) -> Any:
         )
         
         if not response.text:
-            raise Exception("No response from AI model")
+            raise ValueError("No response from AI model")
         
         if is_json:
             text_response = response.text.replace('```json\n', '').replace('```', '').strip()
@@ -108,17 +110,18 @@ async def call_gemini(prompt: str, is_json: bool = False) -> Any:
         
         return response.text
         
-    except Exception as e:
-        logger.error(f"Gemini API error: {str(e)}")
     except google.api_core.exceptions.GoogleAPIError as e:
         logger.error(f"Gemini API error: {str(e)}")
-        raise Exception(f"AI service error: {str(e)}")
+        raise ValueError(f"AI service error: {str(e)}") from e
     except requests.exceptions.RequestException as e:
         logger.error(f"Network error: {str(e)}")
-        raise Exception(f"AI service error: {str(e)}")
+        raise ConnectionError(f"AI service error: {str(e)}") from e
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON parsing error: {str(e)}")
+        raise ValueError(f"Invalid response format from AI service") from e
     except Exception as e:
-        logger.error(f"Gemini API error: {str(e)}")
-        raise Exception(f"AI service error: {str(e)}")
+        logger.error(f"Unexpected error in Gemini API call: {str(e)}")
+        raise RuntimeError(f"AI service error: {str(e)}") from e
 
 @app.post("/ask-question")
 async def ask_question(request: QuestionRequest):
@@ -155,7 +158,7 @@ async def ask_question(request: QuestionRequest):
         
         page_text = request.pdf_text.get(str(source_page), "")
         if not page_text:
-            raise Exception(f"Page {source_page} not found in document")
+            raise KeyError(f"Page {source_page} not found in document")
         
         generation_prompt = f"""Based *only* on the following Page Text, provide a concise and direct answer to the User Question.
 
@@ -189,7 +192,7 @@ async def ask_question(request: QuestionRequest):
         
     except Exception as e:
         logger.error(f"Error processing question: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}") from e
 
 @app.post("/summarize")
 async def summarize_document(request: SummarizeRequest):
@@ -238,4 +241,4 @@ async def summarize_document(request: SummarizeRequest):
         
     except Exception as e:
         logger.error(f"Error generating summary: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error generating summary: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating summary: {str(e)}") from e
