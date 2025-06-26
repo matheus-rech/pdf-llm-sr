@@ -6,13 +6,14 @@ authors = ["Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.c
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = ">=3.12,<3.13"
 fastapi = {extras = ["standard"], version = "^0.115.13"}
 psycopg = {extras = ["binary"], version = "^3.2.9"}
 python-multipart = "^0.0.20"
 pypdf2 = "^3.0.1"
 google-generativeai = "^0.8.5"
 python-dotenv = "^1.1.1"
+docext = "^0.1.0"
 
 
 [build-system]
