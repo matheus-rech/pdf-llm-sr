@@ -110,6 +110,14 @@ async def call_gemini(prompt: str, is_json: bool = False) -> Any:
         
     except Exception as e:
         logger.error(f"Gemini API error: {str(e)}")
+    except google.api_core.exceptions.GoogleAPIError as e:
+        logger.error(f"Gemini API error: {str(e)}")
+        raise Exception(f"AI service error: {str(e)}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error: {str(e)}")
+        raise Exception(f"AI service error: {str(e)}")
+    except Exception as e:
+        logger.error(f"Gemini API error: {str(e)}")
         raise Exception(f"AI service error: {str(e)}")
 
 @app.post("/ask-question")
