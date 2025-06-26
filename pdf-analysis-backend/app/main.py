@@ -55,7 +55,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     try:
         logger.info(f"Uploading PDF: {file.filename}")
         
-        if not file.filename.endswith('.pdf'):
+        if not file.filename.lower().endswith('.pdf'):
             raise HTTPException(status_code=400, detail="File must be a PDF")
         
         content = await file.read()
