@@ -139,17 +139,14 @@ async def extract_pdf_text(file_content: bytes, filename: str) -> Dict[str, Any]
         Dict containing page_texts, extraction_method, total_pages, and enhanced_features
     """
     if USE_NANONETS_EXTRACTION and NANONETS_AVAILABLE:
-        try:
-            logger.info("Attempting NanoNets docext extraction")
-            return await extract_with_nanonets(file_content, filename)
-        except Exception as e:
-            logger.warning(f"NanoNets extraction failed, falling back to PyPDF2: {e}")
-            return {
-                "page_texts": {},
-                "extraction_method": "nanonets_failed",
-                "total_pages": 0,
-                "enhanced_features": []
-            }
+        logger.info("Attempting NanoNets docext extraction")
+        nanonets_result = await extract_with_nanonets(file_content, filename)
+        
+        # Check if NanoNets extraction was successful
+        if nanonets_result["extraction_method"] != "nanonets_failed" and nanonets_result["total_pages"] > 0:
+            return nanonets_result
+        else:
+            logger.warning("NanoNets extraction failed, falling back to PyPDF2")
     elif USE_NANONETS_EXTRACTION and not NANONETS_AVAILABLE:
         logger.warning("NanoNets extraction requested but not available, using PyPDF2")
     
