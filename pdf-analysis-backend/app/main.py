@@ -11,6 +11,7 @@ import logging
 from typing import Dict, Any, List
 import io
 import requests
+from .text_extractors import extract_pdf_text
 
 load_dotenv()
 
@@ -50,37 +51,41 @@ async def healthz():
 
 @app.post("/upload-pdf")
 async def upload_pdf(file: UploadFile = File(...)):
-    """Handle PDF file upload and text extraction"""
+    """Handle PDF file upload and text extraction using hybrid approach"""
     try:
         logger.info(f"Uploading PDF: {file.filename}")
         
-        if not file.filename.endswith('.pdf'):
+        if not file.filename.lower().endswith('.pdf'):
             raise HTTPException(status_code=400, detail="File must be a PDF")
         
         content = await file.read()
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
         
-        page_texts = {}
-        for page_num in range(len(pdf_reader.pages)):
-            page = pdf_reader.pages[page_num]
-            text = page.extract_text()
-            page_texts[str(page_num + 1)] = text  # 1-indexed pages
+        extraction_result = await extract_pdf_text(content, file.filename)
+        
+        page_texts = extraction_result["page_texts"]
+        total_pages = extraction_result["total_pages"]
+        extraction_method = extraction_result["extraction_method"]
+        enhanced_features = extraction_result.get("enhanced_features", [])
         
         pdf_id = file.filename
         pdf_storage[pdf_id] = {
             "filename": file.filename,
             "page_texts": page_texts,
-            "total_pages": len(pdf_reader.pages)
+            "total_pages": total_pages,
+            "extraction_method": extraction_method,
+            "enhanced_features": enhanced_features
         }
         
-        logger.info(f"Successfully processed PDF: {file.filename} with {len(pdf_reader.pages)} pages")
+        logger.info(f"Successfully processed PDF: {file.filename} with {total_pages} pages using {extraction_method}")
         
         return {
             "success": True,
             "pdf_id": pdf_id,
             "filename": file.filename,
-            "total_pages": len(pdf_reader.pages),
-            "page_texts": page_texts
+            "total_pages": total_pages,
+            "page_texts": page_texts,
+            "extraction_method": extraction_method,
+            "enhanced_features": enhanced_features
         }
         
     except Exception as e:
