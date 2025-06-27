@@ -50,6 +50,7 @@ async def extract_with_nanonets(file_content: bytes, filename: str) -> Dict[str,
         import tempfile
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_file:
             temp_file.write(file_content)
+            temp_file.flush()
             temp_file_path = temp_file.name
         
         try:
@@ -80,7 +81,12 @@ async def extract_with_nanonets(file_content: bytes, filename: str) -> Dict[str,
         
     except Exception as e:
         logger.error(f"NanoNets extraction failed for {filename}: {str(e)}")
-        raise e
+        return {
+            "page_texts": {},
+            "extraction_method": "nanonets_failed",
+            "total_pages": 0,
+            "enhanced_features": []
+        }
 
 def extract_with_pypdf2(file_content: bytes) -> Dict[str, Any]:
     """
@@ -108,7 +114,12 @@ def extract_with_pypdf2(file_content: bytes) -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"PyPDF2 extraction failed: {str(e)}")
-        raise e
+        return {
+            "page_texts": {},
+            "extraction_method": "pypdf2_failed",
+            "total_pages": 0,
+            "enhanced_features": []
+        }
 
 async def extract_pdf_text(file_content: bytes, filename: str) -> Dict[str, Any]:
     """
@@ -133,6 +144,12 @@ async def extract_pdf_text(file_content: bytes, filename: str) -> Dict[str, Any]
             return await extract_with_nanonets(file_content, filename)
         except Exception as e:
             logger.warning(f"NanoNets extraction failed, falling back to PyPDF2: {e}")
+            return {
+                "page_texts": {},
+                "extraction_method": "nanonets_failed",
+                "total_pages": 0,
+                "enhanced_features": []
+            }
     elif USE_NANONETS_EXTRACTION and not NANONETS_AVAILABLE:
         logger.warning("NanoNets extraction requested but not available, using PyPDF2")
     

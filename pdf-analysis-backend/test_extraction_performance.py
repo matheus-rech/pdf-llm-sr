@@ -13,9 +13,9 @@ from text_extractors import extract_pdf_text
 
 async def test_extraction_performance():
     """Test extraction performance and logging with the diabetes research PDF"""
-    pdf_path = '/home/ubuntu/attachments/40b46dcf-6489-4a01-ba51-f3c0fff79c8b/jama_kalyani_2025_rv_250015_1750086120.40564.pdf'
+    pdf_path = os.getenv('PDF_PATH', os.path.join(os.path.dirname(__file__), 'fixtures', 'jama_kalyani_2025_rv_250015_1750086120.40564.pdf'))
     
-    if not os.path.exists(pdf_path):
+    if not os.path.isfile(pdf_path):
         print(f"Error: PDF file not found at {pdf_path}")
         return
     
